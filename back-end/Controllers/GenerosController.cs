@@ -1,10 +1,14 @@
-﻿using back_end.Entidades;
+﻿using AutoMapper;
+using back_end.DTOs;
+using back_end.Entidades;
 using back_end.Filtros;
 using back_end.Repositorios;
+using back_end.Utilidades;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -18,62 +22,80 @@ namespace back_end.Controllers
     //[Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class GenerosController : ControllerBase
     {
-        private readonly IRepositorio repositorio;
         private readonly ILogger<Genero> logger;
+        private readonly ApplicationDBContext context;
+        private readonly IMapper mapper;
 
-        public GenerosController(IRepositorio repositorio, ILogger<Genero> logger)
+        public GenerosController(ILogger<Genero> logger, ApplicationDBContext context, IMapper mapper)
         {
-            this.repositorio = repositorio;
             this.logger = logger;
+            this.context = context;
+            this.mapper = mapper;
         }
 
         [HttpGet]
         //[ResponseCache(Duration = 60)]
-        [ServiceFilter(typeof(MiFiltroDeAccion))]
-        public List<Genero> Get()
+        //[ServiceFilter(typeof(MiFiltroDeAccion))]
+        public async Task<List<GeneroDTO>> Get([FromQuery] PaginacionDTO paginacionDTO)
         {
-            logger.LogInformation("Vamos a mostrar los generos");
-            return repositorio.ObtenerTodosLosGeneros();
+            var queryable = context.Generos.AsQueryable();
+            await HttpContext.InsertarParemetrosPaginacionEnCabecera(queryable);
+            var generos = await queryable.OrderBy(x => x.Nombre).Paginar(paginacionDTO).ToListAsync();
+            return mapper.Map<List<GeneroDTO>>(generos);
         }
 
         //Restriccion de ruta Id:int se hace que Id sea un int estricto
         [HttpGet("{Id:int}")]
-        public async Task<ActionResult<Genero>> Get(int Id, [FromHeader] string nombre)
+        public async Task<ActionResult<GeneroDTO>> Get(int Id)
         {
-            //ModelState son las validaciones cuando se hacen un binding 
-            //if (ModelState.IsValid)
-            //{
-            //    return BadRequest(ModelState);
-            //}
-
-            logger.LogDebug("Obteniendo un genero por el id");
-            var genero = await repositorio.ObtenerPorId(Id);
+            var genero = await context.Generos.FirstOrDefaultAsync(x => x.Id == Id);
 
             if (genero == null)
             {
-                throw new ApplicationException($"El genero de ID {Id} no fue encontrado");
-                logger.LogWarning($"No pudimos encontrar el genero de id {Id}");
                 return NotFound();
             }
 
-            return genero;
+            return mapper.Map<GeneroDTO>(genero);   
         }
 
         [HttpPost]
-        public ActionResult Post([FromBody] Genero genero)
+        public async Task<ActionResult> Post([FromBody] GeneroCreacionDTO generoCreacionDTO)
         {
+            var genero = mapper.Map<Genero>(generoCreacionDTO);
+            context.Add(genero);
+            await context.SaveChangesAsync();
             return NoContent();
         }
 
-        [HttpPut]
-        public ActionResult Put([FromBody] Genero genero)
+        [HttpPut("{Id:int}")]
+        public async Task<ActionResult> Put(int Id, [FromBody] GeneroCreacionDTO generoCreacionDTO)
         {
+            var genero = await context.Generos.FirstOrDefaultAsync(x => x.Id == Id);
+
+            if (genero == null)
+            {
+                return NotFound();
+            }
+
+            genero = mapper.Map(generoCreacionDTO, genero);
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 
-        [HttpDelete]
-        public ActionResult Delete()
+        [HttpDelete("{Id:int}")]
+        public async Task<ActionResult> Delete(int id)
         {
+            var genero = await context.Generos.FirstOrDefaultAsync(x => x.Id == id);
+
+            if (genero == null)
+            {
+                return NotFound();
+            }
+
+            context.Remove(genero);
+            await context.SaveChangesAsync();
+
             return NoContent();
         }
     }
